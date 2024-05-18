@@ -1,0 +1,94 @@
+version: '3'
+
+networks:
+  network_bot:
+    ipam:
+      driver: default
+      config:
+        - subnet: 11.0.0.0/24
+
+services:
+  db:
+    image: db_image
+    networks:
+      network_bot:
+        ipv4_address: 11.0.0.2
+    container_name: db
+    build:
+      context: ./db
+      dockerfile: Dockerfile
+      args:
+        DB_REPL_USER: ${DB_REPL_USER}
+        DB_REPL_PASSWORD: ${DB_REPL_PASSWORD}
+        DB_DATABASE: ${DB_DATABASE}
+        DB_PORT: ${DB_PORT}
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_DATABASE}
+      POSTGRES_HOST_AUTH_METHOD: "scram-sha-256\nhost replication all 11.0.0.0/0 md5"
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    env_file:
+      - .env
+    volumes:
+      - pg_logs:/var/log/
+
+  db_repl:
+    image: db_repl_image
+    networks:
+      network_bot:
+        ipv4_address: 11.0.0.3
+    container_name: db_repl
+    build:
+      context: ./db_repl
+      dockerfile: Dockerfile
+      args:
+        DB_REPL_HOST: ${DB_REPL_HOST}
+        DB_REPL_PORT: ${DB_REPL_PORT}
+        DB_REPL_USER: ${DB_REPL_USER}
+        DB_REPL_PASSWORD: ${DB_REPL_PASSWORD}
+        DB_PORT: ${DB_PORT}
+        DB_HOST: ${DB_HOST}
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_REPLICATION_USER: ${DB_REPL_USER}
+      POSTGRES_REPLICATION_PASSWORD: ${DB_REPL_PASSWORD}
+    env_file:
+      - .env
+    depends_on:
+      - db
+
+  bot:
+    image: bot_image
+    networks:
+      network_bot:
+        ipv4_address: 11.0.0.4
+    container_name: bot
+    build:
+      context: ./bot
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      TOKEN: ${TOKEN}
+      HOST: ${RM_HOST}
+      PORT: ${RM_PORT}
+      USER: ${RM_USER}
+      PASSWORD: ${RM_PASSWORD}
+      DBHOST: ${DB_HOST}
+      DBPORT: ${DB_PORT}
+      DBUSER: ${DB_USER}
+      DBPASSWORD: ${DB_PASSWORD}
+      DBNAME: ${DB_DATABASE}
+    env_file:
+      - .env
+    depends_on:
+      - db
+    volumes:
+      - pg_logs:/var/log/
+
+volumes:
+  pg_data:
+  pg_logs:
