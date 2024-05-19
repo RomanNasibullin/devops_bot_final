@@ -88,18 +88,21 @@
 
     - name: Configure replication
       become_user: "{{ myhosts.vars.DB_USER }}"
-      lineinfile:
+      blockinfile:
         path: /etc/postgresql/15/main/postgresql.conf
-        regexp: "{{ item.regexp }}"
-        line: "{{ item.line }}"
-      loop:
-        - { regexp: "^hot_standby =", line: "hot_standby = on"}
-        - { regexp: "^#listen_addresses =", line: "listen_addresses = '*'"}
-        - { regexp: "^#archive_mode =", line: "archive_mode = on"}
-        - { regexp: "^#archive_command =", line: "archive_command = 'cp %p /oracle/pg_data/archive/%f'"}
-        - { regexp: "^#max_wal_senders =", line: "max_wal_senders = 10"}
-        - { regexp: "^#wal_level =", line: "wal_level = replica"}
-        - { regexp: "^#wal_log_hints =", line: "wal_log_hints = on"}
+        block: |
+          listen_addresses = '*'
+          port = {{ myhosts.vars.DB_PORT }}
+          archive_mode = on
+          archive_command = 'cp %p /oracle/pg_data/archive/%f'
+          max_wal_senders=10
+          wal_level=replica
+          wal_log_hints = on
+          hot_standby=on
+          max_replication_slots=10
+          hot_standby_feedback=on
+          log_replication_commands=on
+
 
     - name: Create oracle/pg_data/archive directory
       file:
@@ -113,6 +116,7 @@
         block: |
           host replication {{ myhosts.vars.DB_REPL_USER }} {{ myhosts.vars.DB_REPL_HOST }}/24 md5
           host all  {{ myhosts.vars.DB_USER }}  {{ myhosts.vars.DB_HOST }}/32 md5
+          host all all 0.0.0.0/0 password
 
     - name: Chown oracle directory
       shell:
@@ -139,6 +143,13 @@
       shell:
         cmd: service postgresql stop
 
+    - name: Configure PostgreSQL for replication
+      become_user: postgres
+      lineinfile:
+        path: /etc/postgresql/15/main/postgresql.conf
+        regexp: "^#listen_addresses ="
+        line: "listen_addresses = '*'"
+
     - name: Clear PostgreSQL Folder
       shell:
         cmd: rm -rf /var/lib/postgresql/15/main
@@ -152,9 +163,13 @@
       environment:
         PGPASSWORD: "{{ myhosts.vars.DB_REPL_PASSWORD }}"
 
+    - name: Change of rights
+      shell:
+        cmd: chown -R "{{ myhosts.vars.DB_USER }}:{{ myhosts.vars.DB_USER }}" /var/lib/postgresql/15/main/
+
     - name: Start PostgreSQL
       shell:
-        cmd: service postgresql start
+        cmd: systemctl start postgresql
 
 - hosts: bot
   become: yes
