@@ -92,18 +92,14 @@ def get_phone_numbers(update: Update, context):
 import subprocess
 
 def get_repl_logs(update: Update, context):
-    try:
-        command = "cat /var/log/postgresql/postgresql.log | grep repl | tail -n 30"
-        res = subprocess.run(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        if res.returncode != 0 or res.stderr.decode() != "":
-            update.message.reply_text("Can not open log file!")
-        else:
-            logs = res.stdout.decode().strip('\n')
-            if len(logs) > 4096:
-                logs = logs[-1:-4093] + "..."
-            update.message.reply_text(logs)
-    except Exception as e:
-        update.message.reply_text(f"Error: {str(e)}")
+    update.message.reply_text("Ищу логи о репликации...")
+    
+    repl_logs_info = ssh_command("sudo cat /var/log/postgresql/postgresql-15-main.log | grep repl")
+
+    if len(repl_logs_info) > 4096:
+        update.message.reply_text(repl_logs_info[-1:-4096])
+    else:
+        update.message.reply_text(repl_logs_info)
 
 def get_release(update: Update, context):
     release_info = ssh_connect("lsb_release -a")
