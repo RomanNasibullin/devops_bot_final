@@ -1,0 +1,3 @@
+ansible ansible_host="{{ myhosts.hosts.ansible.ansible_host }}" ansible_user="{{ myhosts.hosts.ansible.ansible_user }}" ansible_password="{{ myhosts.hosts.ansible.ansible_password }}"
+slave ansible_host="{{ myhosts.hosts.slave.ansible_host }}" ansible_user="{{ myhosts.hosts.slave.ansible_user }}" ansible_password="{{ myhosts.hosts.slave.ansible_password }}"
+bot ansible_host="{{ myhosts.hosts.ansible.ansible_host }}" ansible_user="{{ myhosts.hosts.ansible.ansible_user }}" ansible_password="{{ myhosts.hosts.ansible.ansible_password }}"

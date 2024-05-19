@@ -1,0 +1,174 @@
+- name: Configure and Deploy Telegram Bot
+  hosts: ansible,slave
+  become: true
+
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 86400
+      become: yes
+
+    - name: Install Git
+      apt:
+        name: git
+        state: present
+
+    - name: Clone Telegram bot repository
+      git:
+        repo: "{{ myhosts.vars.GIT_URL }}"
+        dest: "{{ myhosts.vars.WORKDIR }}"
+        force: yes
+
+    - name: Install Python and Python pip
+      apt:
+        name:
+          - python3
+          - python3-pip
+          - python3-venv
+        state: present
+
+    - name: Installing pip packages
+      pip:
+        requirements: "{{ myhosts.vars.WORKDIR }}/requirements.txt"
+        extra_args: "--break-system-packages"
+
+- hosts: ansible
+  become: yes
+  tasks:
+    - name: Install PostgreSQL
+      apt:
+        name:
+        - postgresql
+        - postgresql-contrib
+        state: present
+        update_cache: true
+
+    - name: Initialize PostgreSQL database
+      become_user: "{{ myhosts.vars.DB_USER }}"
+      postgresql_db:
+        name: "{{ myhosts.vars.DB_DATABASE }}"
+
+    - name: Change user's password
+      become_user: "{{ myhosts.vars.DB_USER }}"
+      shell:
+        cmd: psql -c "ALTER ROLE {{ myhosts.vars.DB_USER }} PASSWORD '{{ myhosts.vars.DB_PASSWORD }}';"
+
+    - name: Create replication user
+      become_user: "{{ myhosts.vars.DB_USER }}"
+      postgresql_user:
+        name: "{{ myhosts.vars.DB_REPL_USER }}"
+        password: "{{ myhosts.vars.DB_REPL_PASSWORD }}"
+        role_attr_flags: REPLICATION,LOGIN
+        state: present
+
+    - name: Create table emails
+      become_user: "{{ myhosts.vars.DB_USER }}"
+      postgresql_query:
+        db: "{{ myhosts.vars.DB_DATABASE }}"
+        query: CREATE TABLE IF NOT EXISTS emails (id SERIAL PRIMARY KEY, email VARCHAR (255) UNIQUE)
+
+    - name: Create table phones
+      become_user: "{{ myhosts.vars.DB_USER }}"
+      postgresql_query:
+        db: "{{ myhosts.vars.DB_DATABASE }}"
+        query: CREATE TABLE IF NOT EXISTS phones ( id SERIAL PRIMARY KEY, phone_number VARCHAR (20) UNIQUE)
+
+    - name: Insert table emails
+      become_user: "{{ myhosts.vars.DB_USER }}"
+      postgresql_query:
+        db: "{{ myhosts.vars.DB_DATABASE }}"
+        query: INSERT INTO emails (email) VALUES ('roman@mail.ru'), ('ptstart@yandex.com');
+
+    - name: Insert table phones
+      become_user: "{{ myhosts.vars.DB_USER }}"
+      postgresql_query:
+        db: "{{ myhosts.vars.DB_DATABASE }}"
+        query: INSERT INTO phones (phone_number) VALUES ('+78124955252'), ('+73552812125');
+
+    - name: Configure replication
+      become_user: "{{ myhosts.vars.DB_USER }}"
+      lineinfile:
+        path: /etc/postgresql/15/main/postgresql.conf
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+      loop:
+        - { regexp: "^hot_standby =", line: "hot_standby = on"}
+        - { regexp: "^#listen_addresses =", line: "listen_addresses = '*'"}
+        - { regexp: "^#archive_mode =", line: "archive_mode = on"}
+        - { regexp: "^#archive_command =", line: "archive_command = 'cp %p /oracle/pg_data/archive/%f'"}
+        - { regexp: "^#max_wal_senders =", line: "max_wal_senders = 10"}
+        - { regexp: "^#wal_level =", line: "wal_level = replica"}
+        - { regexp: "^#wal_log_hints =", line: "wal_log_hints = on"}
+
+    - name: Create oracle/pg_data/archive directory
+      file:
+        path: /oracle/pg_data/archive
+        state: directory
+
+    - name: Configure authentication
+      become_user: "{{ myhosts.vars.DB_USER }}"
+      blockinfile:
+        path: /etc/postgresql/15/main/pg_hba.conf
+        block: |
+          host replication {{ myhosts.vars.DB_REPL_USER }} {{ myhosts.vars.DB_REPL_HOST }}/24 md5
+          host all  {{ myhosts.vars.DB_USER }}  {{ myhosts.vars.DB_HOST }}/32 md5
+
+    - name: Chown oracle directory
+      shell:
+        cmd: chown -R "{{ myhosts.vars.DB_USER }}:{{ myhosts.vars.DB_USER }}" /oracle/pg_data/archive/
+
+    - name: Restart PostgreSQL
+      systemd:
+        state: restarted
+        daemon_reload: yes
+        name: postgresql
+
+- hosts: slave
+  become: yes
+  tasks:
+    - name: Install PostgreSQL
+      apt:
+        name:
+        - postgresql
+        - postgresql-contrib
+        state: present
+        update_cache: true
+
+    - name: Stop PostgreSQL
+      shell:
+        cmd: service postgresql stop
+
+    - name: Clear PostgreSQL Folder
+      shell:
+        cmd: rm -rf /var/lib/postgresql/15/main
+
+    - name: Set replica password
+      shell:
+        cmd: export PGPASSWORD="{{ myhosts.vars.DB_REPL_PASSWORD }}"
+
+    - name: Check for replication
+      shell: pg_basebackup -R -h "{{ myhosts.vars.DB_HOST }}" -U "{{ myhosts.vars.DB_REPL_USER }}" -D /var/lib/postgresql/15/main -P
+      environment:
+        PGPASSWORD: "{{ myhosts.vars.DB_REPL_PASSWORD }}"
+
+    - name: Start PostgreSQL
+      shell:
+        cmd: service postgresql start
+
+- hosts: bot
+  become: yes
+  tasks:
+    - name: Run bot
+      ansible.builtin.command:
+        cmd: python3 {{ myhosts.vars.WORKDIR }}/bot.py
+      environment:
+        TOKEN: "{{ myhosts.vars.TOKEN }}"
+        DB_HOST: "{{ myhosts.vars.DB_HOST }}"
+        DB_USER: "{{ myhosts.vars.DB_USER }}"
+        DB_PASSWORD: "{{ myhosts.vars.DB_PASSWORD }}"
+        DB_DATABASE: "{{ myhosts.vars.DB_DATABASE }}"
+        RM_HOST: "{{ myhosts.vars.RM_HOST }}"
+        RM_PORT: "{{ myhosts.vars.RM_PORT }}"
+        RM_USER: "{{ myhosts.vars.RM_USER }}"
+        RM_PASSWORD: "{{ myhosts.vars.RM_PASSWORD }}"
