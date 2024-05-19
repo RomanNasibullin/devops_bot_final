@@ -27,7 +27,7 @@ services:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_DATABASE}
-      POSTGRES_HOST_AUTH_METHOD: "scram-sha-256\nhost replication all 11.0.0.0/0 md5"
+      POSTGRES_HOST_AUTH_METHOD: "scram-sha-256\nhost all all 0.0.0.0/0 password\nhost replication all 11.0.0.0/0 md5"
       POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
     env_file:
       - .env
