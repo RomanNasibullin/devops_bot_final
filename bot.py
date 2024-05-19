@@ -97,7 +97,7 @@ def get_repl_logs(update: Update, context):
     repl_logs_info = ssh_command("sudo cat /var/log/postgresql/postgresql-15-main.log | grep repl")
 
     if len(repl_logs_info) > 4096:
-        update.message.reply_text(repl_logs_info[-1:-4096])
+        update.message.reply_text(repl_logs_info[:4096])
     else:
         update.message.reply_text(repl_logs_info)
 
